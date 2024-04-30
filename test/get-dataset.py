@@ -5,8 +5,8 @@ load_dotenv()
 from streamdset import StreamDsetClient
 
 client = StreamDsetClient(
-    os.environ["TEST_ACCESS_KEY_ID"],
-    os.environ["TEST_ACCESS_KEY_SECRET"]
+    os.environ.get("TEST_ACCESS_KEY_ID", ""),
+    os.environ.get("TEST_ACCESS_KEY_SECRET","")
 )
 
 dataset = client.get_dataset(3)

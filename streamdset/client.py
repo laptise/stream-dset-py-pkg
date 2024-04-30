@@ -144,5 +144,8 @@ class StreamDsetClient:
         return [StreamDataset._from_api_response(dataset, self.credential) for dataset in res]
     
     def get_dataset(self, dataset_id:int):
-        res = requests.get(f"{API_ENDPOINT}/datasets/{dataset_id}", auth=(self.credential.get_tuple())).json()
-        return StreamDataset._from_api_response(res, self.credential)
+        try:
+            res = requests.get(f"{API_ENDPOINT}/datasets/{dataset_id}", auth=(self.credential.get_tuple())).json()
+            return StreamDataset._from_api_response(res, self.credential)
+        except:
+            raise Exception("Dataset not found")
