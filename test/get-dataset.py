@@ -9,13 +9,17 @@ client = StreamDsetClient(
     os.environ.get("TEST_ACCESS_KEY_SECRET","")
 )
 
-dataset = client.get_dataset(3)
-# dataset.push_row({
-#     "music name": "a",
-#     "x": "/Users/yoonsookim/Library/CloudStorage/GoogleDrive-ml.laptise@gmail.com/マイドライブ/audio/training/mix.wav",
-#     'y': '/Users/yoonsookim/Library/CloudStorage/GoogleDrive-ml.laptise@gmail.com/マイドライブ/audio/training/mix.wav',
-# })
+# datasets = client.get_datasets()
+# print(datasets)
+# print(datasets)
 
-generator = iter(dataset)
-for i in generator:
-    print(i)
+dataset = client.get_dataset(1)
+dataset.push_row({
+    "music_name": "a",
+    "x": "/workspaces/stream-dset-py-pkg/dummy/Flow.wav",
+    'y': '/workspaces/stream-dset-py-pkg/dummy/Hot-Mess.wav',
+})
+
+# generator = iter(dataset)
+# for i in generator:
+#     print(i)

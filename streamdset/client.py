@@ -106,11 +106,12 @@ class StreamDataset:
     
     def push_row(self, body:dict):
         resolved = resolve_payload(body, self.columns)
-        resp = requests.post(f"{API_ENDPOINT}/datasets/{self.id}/rows", files=resolved, auth=(self.credential.get_tuple())).json()
+        resp = requests.post(f"{API_ENDPOINT}/datasets/{self.id}/rows", files=resolved, auth=(self.credential.get_tuple()))
         print(resp)
 
     def __repr__(self) -> str:
-        return f"{self.name}\n" + \
+        return f"name: {self.name}\n" + \
+            f"id: {self.id}\n" + \
             f"  rows: {self.row_counts}\n" + \
             f"  columns:\n" + \
             "\n".join([f"    - {column}" for column in self.columns]) 
