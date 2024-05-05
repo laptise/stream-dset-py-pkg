@@ -22,7 +22,6 @@ class DatasetTest(unittest.TestCase):
         after = dataset.row_counts
         self.assertTrue(before < after)
 
-
 def test():
     unittest.main()
     

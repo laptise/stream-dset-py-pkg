@@ -1,9 +1,8 @@
+from typing import Literal
 import requests
 import json
 import os
-
 from .constant import API_ENDPOINT
-import urllib
 
 
 def stream_file(filename, chunk_size=200):
@@ -175,6 +174,19 @@ class StreamDataset:
     def __iter__(self):
         return self._load_row()
 
+class ColumnDefinition:
+    def __init__(self, name:str, type:Literal['file', 'string', 'number']):
+        self.name = name
+        self.type = type
+    
+    def __dict__(self):
+        return {
+            'name': self.name,
+            'type': self.type,
+        }
+    
+    def __repr__(self) -> str:
+        return f"<ColumnDefinition:{self.type}> {self.name}"
 
 class StreamDsetClient:
     def __init__(self, access_key_id:str, access_key_secret:str, temp_dir: str = os.getcwd()):
@@ -205,3 +217,20 @@ class StreamDsetClient:
             )
         except:
             raise Exception("Dataset not found")
+    
+    def create_dataset(self, name:str, columns:list[ColumnDefinition]):
+        cols = []
+        for column in columns:
+            cols.append({
+                "name": column.name,
+                "type": column.type
+            })
+        payload = { 'name': name, 'columns': cols }
+        resp = requests.post(
+            f"{API_ENDPOINT}/datasets", 
+            json=payload, 
+            auth=(self.credential.get_tuple())
+        )
+        resp = resp.json()
+        return self.get_dataset(resp['id'])
+
