@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 import os
 import unittest
-from streamdset import StreamDsetClient
+from strdset import StreamDsetClient
 load_dotenv()
 
 class DatasetTest(unittest.TestCase):
