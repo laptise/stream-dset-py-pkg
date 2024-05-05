@@ -124,6 +124,7 @@ class StreamDataset:
         resp = requests.post(f"{API_ENDPOINT}/datasets/{self.id}/rows", json=resolved, auth=(self.credential.get_tuple()))
         resp = resp.json()
         self.row_counts = resp
+        print("Row pushed successfully")
 
     def __repr__(self) -> str:
         return f"name: {self.name}\n" + \
