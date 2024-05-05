@@ -3,6 +3,7 @@ import json
 import os
 
 from .constant import API_ENDPOINT
+import urllib
 
 
 def stream_file(filename, chunk_size=200):
@@ -112,7 +113,7 @@ class StreamDataset:
                 file.close()
                 resp = resp.json()
                 filekey = resp['Key']
-                data[column.name] = ['file', filekey]
+                data[column.name] = ['file', filekey, filename]
         other_columns = list(filter(lambda column: column.type != 'file', columns))
         for column in other_columns:
             data[column.name] = payload[column.name]
@@ -144,15 +145,12 @@ class StreamDataset:
                 for value_key in data:
                     value = data[value_key]
                     if isinstance(value, list):
-                        dtype, _ = value
+                        dtype, *_ =  value
                         if dtype == "file":
-                            _, presigned_url = value
-                            param_dropped = presigned_url.split('?')[0]
-                            filename = os.path.basename(param_dropped)
+                            _, presigned_url, filename = value
                             tosave_dir = os.path.join(
                                 self.temp_dir, 
                                 str(self.id), 
-                                str(row_meta['id']),
                                 value_key
                             )
                             tosave_path = os.path.join(tosave_dir, filename)
