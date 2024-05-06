@@ -57,6 +57,7 @@ class StreamDataset(IterableDataset):
         id:int, 
         name:str, 
         credential:SDCredential,
+        batch_size:int | None = None,
         row_counts:int = 0,
         columns:list[SDColumn] = [], 
         temp_dir: str = os.getcwd()
@@ -68,6 +69,7 @@ class StreamDataset(IterableDataset):
         self.credential = credential
         self.row_counts = row_counts
         self.temp_dir = temp_dir
+        self.batch_size = batch_size
     
     @staticmethod
     def _from_api_response(response, credential:SDCredential, temp_dir: str = os.getcwd()):
@@ -132,9 +134,15 @@ class StreamDataset(IterableDataset):
             f"  rows: {self.row_counts}\n" + \
             f"  columns:\n" + \
             "\n".join([f"    - {column}" for column in self.columns]) 
+    
+    def with_batch(self, batch_size:int):
+        self.batch_size = batch_size
+        return self
 
     def _load_row(self):
         target = f"{API_ENDPOINT}/datasets/{self.id}/rows"
+        batch = []
+        
         while True:
             try:
                 resp = requests.get(target, auth=(self.credential.get_tuple()))
@@ -151,6 +159,7 @@ class StreamDataset(IterableDataset):
                             tosave_dir = os.path.join(
                                 self.temp_dir, 
                                 str(self.id), 
+                                str(row_meta['id']),
                                 value_key
                             )
                             tosave_path = os.path.join(tosave_dir, filename)
@@ -164,12 +173,20 @@ class StreamDataset(IterableDataset):
                         parsed[value_key] = ['file',tosave_path]
                     else:
                         parsed[value_key] = value
-                yield parsed
+                if self.batch_size is None:
+                    yield parsed
+                else:
+                    batch.append(parsed)
+                    if len(batch) == self.batch_size:
+                        yield batch
+                        batch = []
                 if not resp['next']:
-                    break
+                    if len(batch) > 0:
+                        yield batch
+                    return
                 else:
                     target = resp['next']
-            except:
+            except Exception as e:
                 break
     
     def __iter__(self):

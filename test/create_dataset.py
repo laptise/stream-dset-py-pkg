@@ -12,11 +12,9 @@ class DatasetTest(unittest.TestCase):
         )
 
     def test_create_dataset(self):
-        dataset = self.client.create_dataset("test", [
+        dataset = self.client.create_dataset("batch_test", [
             ColumnDefinition("music name", "string"),
-            ColumnDefinition("definition", "file"),
-            ColumnDefinition("x", "file"),
-            ColumnDefinition("y", "file"),
+            ColumnDefinition("file", "file"),
         ])
         self.assertIsInstance(dataset, StreamDataset)
         

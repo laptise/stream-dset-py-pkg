@@ -12,12 +12,11 @@ class DatasetTest(unittest.TestCase):
         )
     
     def test_push_row(self):
-        dataset = self.client.get_dataset(1)
+        dataset = self.client.get_dataset(9)
         before = dataset.row_counts 
         dataset.push_row({
-            "title": "a",
-            "x": "/workspaces/stream-dset-py-pkg/dummy/Flow.wav",
-            'y': '/workspaces/stream-dset-py-pkg/dummy/Hot-Mess.wav',
+            "music name": "a",
+            'file': '/workspaces/stream-dset-py-pkg/dummy/1-08 Cancer.mp3',
         })
         after = dataset.row_counts
         self.assertTrue(before < after)
