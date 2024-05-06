@@ -1,5 +1,4 @@
 import threading
-from time import sleep
 from queue import Queue
 from typing import Literal
 import requests
@@ -7,8 +6,8 @@ import json
 import os
 from torch.utils.data import IterableDataset
 from .constant import API_ENDPOINT
-from multiprocessing import Process, Queue
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from multiprocessing import Queue
+from concurrent.futures import as_completed
 
 
 def stream_file(filename, chunk_size=200):
@@ -139,11 +138,11 @@ class StreamDataset(IterableDataset):
         self.batch_size = batch_size
         return self
 
-    def _prepare_all(self, target:str, queue: Queue):
-        print("prepare start")
-        futures = []
-        while True:
+    def _prepare_all(self, initial_target:str, queue: Queue):
+        target = initial_target
+        while target:
             try:
+                futures = []
                 resp = requests.get(target, auth=(self.credential.get_tuple()))
                 resp = resp.json()
                 data_list = resp['data']
@@ -173,11 +172,9 @@ class StreamDataset(IterableDataset):
                         else:
                             parsed[value_key] = value
                     queue.put((parsed, futures))
-                if not resp['next']:
-                    break
-                else:
-                    target = resp['next']
+                target = resp['next']
             except Exception as e:
+                print(e)
                 break
         print("Downloaded all data")
         
@@ -191,10 +188,11 @@ class StreamDataset(IterableDataset):
     
     def __iter__(self):
         queue = Queue()
-        threading.Thread(target=self._prepare_all, args=(f"{API_ENDPOINT}/datasets/{self.id}/rows", queue)).start()
+        thread = threading.Thread(target=self._prepare_all, args=(f"{API_ENDPOINT}/datasets/{self.id}/rows", queue))
+        thread.start()
         
         batch = []  # バッチデータを保持するリスト
-        while not queue.empty() or threading.active_count() > 1:
+        while not queue.empty() or thread.is_alive():
             parsed, futures = queue.get()
             for future in as_completed(futures):
                 future.result()  # 各ダウンロードが完了するのを待つ
@@ -206,7 +204,6 @@ class StreamDataset(IterableDataset):
                 if len(batch) == self.batch_size:  # バッチが指定サイズに達したら
                     yield batch
                     batch = []  # バッチをリセット
-        
         if batch:  # バッチサイズが設定されていて、バッチに残っているデータがあれば、最後にそれらを返す
             yield batch
 

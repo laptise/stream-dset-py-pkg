@@ -1,4 +1,3 @@
-from time import sleep
 from dotenv import load_dotenv
 import os
 import unittest
@@ -15,11 +14,11 @@ class DatasetTest(unittest.TestCase):
         )
     
     def test_iterate(self):
-        dataset = self.client.get_dataset(1).with_batch(6)
+        dataset = self.client.get_dataset(8).with_batch(6)
         generator = iter(dataset)
         iterated_count = 0
         for _ in generator:
-            print(len(_))
+            print("iter", type(_))
             iterated_count += 1
         # self.assertTrue(iterated_count == dataset.row_counts)
             
