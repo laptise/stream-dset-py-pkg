@@ -1,13 +1,15 @@
 import threading
 from queue import Queue
-from typing import Literal
+from typing import Any, Literal
 import requests
 import json
 import os
 from torch.utils.data import IterableDataset
+import multiprocessing
 from .constant import API_ENDPOINT
-from multiprocessing import Queue
+from multiprocessing import Manager
 from concurrent.futures import as_completed
+from multiprocessing import Pool
 
 
 def stream_file(filename, chunk_size=200):
@@ -22,6 +24,33 @@ def send_file(url, filename):
     with requests.post(url, data=stream_file(url, filename)) as response:
         print(response.text)
 
+def download_file(row: tuple[dict, dict, str, Queue[Any]]):
+    data, meta, datasetdir, m_queue = row
+    parsed = {}
+    for value_key in data:
+        value = data[value_key]
+        if isinstance(value, list):
+            dtype, *_ =  value
+            if dtype == "file":
+                _, presigned_url, filename = value
+                tosave_dir = os.path.join(
+                    datasetdir, 
+                    str(meta['id']),
+                    value_key
+                )
+                tosave_path = os.path.join(tosave_dir, filename)
+                if os.path.exists(tosave_path):
+                    parsed[value_key] = ['file',tosave_path]
+                    continue
+                r = requests.get(presigned_url, allow_redirects=True)
+                os.makedirs(tosave_dir, exist_ok=True)
+                with open(tosave_path, "wb") as f:
+                    f.write(r.content)
+            parsed[value_key] = ['file',tosave_path]
+        else:
+            parsed[value_key] = value
+    print("r")
+    m_queue.put(parsed)
 
 class SDCredential:
     def __init__(self, access_key_id:str, access_key_secret:str):
@@ -52,8 +81,6 @@ class SDColumn:
     
     def __repr__(self) -> str:
         return f"<SDColumn:{self.type}> {self.name}"
-
-
 
 class StreamDataset(IterableDataset):
 
@@ -138,40 +165,24 @@ class StreamDataset(IterableDataset):
         self.batch_size = batch_size
         return self
 
+    def _batch_download_list(self, datalist:list, queue:Queue):
+        manager = Manager()
+        m_queue = manager.Queue()  # multiprocessing.Queue for process-safe communication
+        datasetdir = os.path.join(self.temp_dir, str(self.id))
+        collated = list(map(lambda data: (data[0], data[1], datasetdir, m_queue), datalist))
+        with Pool(16) as pool:
+            pool.map(download_file, collated)
+        while not m_queue.empty():
+            queue.put(m_queue.get())
+
     def _prepare_all(self, initial_target:str, queue: Queue):
         target = initial_target
         while target:
             try:
-                futures = []
                 resp = requests.get(target, auth=(self.credential.get_tuple()))
                 resp = resp.json()
                 data_list = resp['data']
-                parsed = {}
-                for data, row_meta in data_list:
-                    for value_key in data:
-                        value = data[value_key]
-                        if isinstance(value, list):
-                            dtype, *_ =  value
-                            if dtype == "file":
-                                _, presigned_url, filename = value
-                                tosave_dir = os.path.join(
-                                    self.temp_dir, 
-                                    str(self.id), 
-                                    str(row_meta['id']),
-                                    value_key
-                                )
-                                tosave_path = os.path.join(tosave_dir, filename)
-                                if os.path.exists(tosave_path):
-                                    parsed[value_key] = ['file',tosave_path]
-                                    continue
-                                r = requests.get(presigned_url, allow_redirects=True)
-                                os.makedirs(tosave_dir, exist_ok=True)
-                                with open(tosave_path, "wb") as f:
-                                    f.write(r.content)
-                            parsed[value_key] = ['file',tosave_path]
-                        else:
-                            parsed[value_key] = value
-                    queue.put((parsed, futures))
+                self._batch_download_list(data_list, queue)
                 target = resp['next']
             except Exception as e:
                 print(e)
@@ -193,10 +204,7 @@ class StreamDataset(IterableDataset):
         
         batch = []  # バッチデータを保持するリスト
         while not queue.empty() or thread.is_alive():
-            parsed, futures = queue.get()
-            for future in as_completed(futures):
-                future.result()  # 各ダウンロードが完了するのを待つ
-            
+            parsed = queue.get()
             if self.batch_size is None:  # バッチサイズが None の場合、各アイテムを直接返す
                 yield parsed
             else:

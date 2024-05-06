@@ -2,11 +2,13 @@ from dotenv import load_dotenv
 import os
 import unittest
 from strdset import StreamDsetClient
+import shutil
 load_dotenv()
 
 class DatasetTest(unittest.TestCase):
     def setUp(self):
         tempdir = "temp"
+        # shutil.rmtree("/workspaces/stream-dset-py-pkg/temp")
         self.client = StreamDsetClient(
             os.environ.get("TEST_ACCESS_KEY_ID", ""),
             os.environ.get("TEST_ACCESS_KEY_SECRET",""),
