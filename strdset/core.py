@@ -2,6 +2,7 @@ from typing import Literal
 import requests
 import json
 import os
+from torch.utils.data import IterableDataset
 from .constant import API_ENDPOINT
 
 
@@ -50,7 +51,7 @@ class SDColumn:
 
 
 
-class StreamDataset:
+class StreamDataset(IterableDataset):
     def __init__(
         self, 
         id:int, 
@@ -117,7 +118,6 @@ class StreamDataset:
         for column in other_columns:
             data[column.name] = payload[column.name]
         return data
-        
     
     def push_row(self, body:dict):
         resolved = self._resolve_payload(body, self.columns)
@@ -174,6 +174,9 @@ class StreamDataset:
     
     def __iter__(self):
         return self._load_row()
+    
+    def __len__(self):
+        return self.row_counts
 
 class ColumnDefinition:
     def __init__(self, name:str, type:Literal['file', 'string', 'number']):
