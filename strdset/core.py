@@ -4,7 +4,7 @@ import json
 import os
 from torch.utils.data import IterableDataset
 from .constant import API_ENDPOINT
-
+from multiprocessing import Process, Queue
 
 def stream_file(filename, chunk_size=200):
     with open(filename, 'rb') as file:
@@ -128,18 +128,11 @@ class StreamDataset(IterableDataset):
         self.row_counts = resp
         print("Row pushed successfully")
 
-    def __repr__(self) -> str:
-        return f"name: {self.name}\n" + \
-            f"id: {self.id}\n" + \
-            f"  rows: {self.row_counts}\n" + \
-            f"  columns:\n" + \
-            "\n".join([f"    - {column}" for column in self.columns]) 
-    
     def with_batch(self, batch_size:int):
         self.batch_size = batch_size
         return self
 
-    def _load_row(self):
+    def _load_row(self, batch_size:int | None):
         target = f"{API_ENDPOINT}/datasets/{self.id}/rows"
         batch = []
         
@@ -173,11 +166,11 @@ class StreamDataset(IterableDataset):
                         parsed[value_key] = ['file',tosave_path]
                     else:
                         parsed[value_key] = value
-                if self.batch_size is None:
+                if batch_size is None:
                     yield parsed
                 else:
                     batch.append(parsed)
-                    if len(batch) == self.batch_size:
+                    if len(batch) == batch_size:
                         yield batch
                         batch = []
                 if not resp['next']:
@@ -188,9 +181,24 @@ class StreamDataset(IterableDataset):
                     target = resp['next']
             except Exception as e:
                 break
+
+    def _prepare_all(self):
+        generator = self._load_row(None)
+        for _ in generator:
+            pass
+        
+
+    def __repr__(self) -> str:
+        return f"name: {self.name}\n" + \
+            f"id: {self.id}\n" + \
+            f"  rows: {self.row_counts}\n" + \
+            f"  columns:\n" + \
+            "\n".join([f"    - {column}" for column in self.columns]) 
     
     def __iter__(self):
-        return self._load_row()
+        process = Process(target=self._prepare_all)
+        process.start()
+        return self._load_row(self.batch_size)
     
     def __len__(self):
         return self.row_counts
