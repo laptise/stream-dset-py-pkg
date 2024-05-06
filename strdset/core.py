@@ -49,7 +49,6 @@ def download_file(row: tuple[dict, dict, str, Queue[Any]]):
             parsed[value_key] = ['file',tosave_path]
         else:
             parsed[value_key] = value
-    print("r")
     m_queue.put(parsed)
 
 class SDCredential:
@@ -170,7 +169,7 @@ class StreamDataset(IterableDataset):
         m_queue = manager.Queue()  # multiprocessing.Queue for process-safe communication
         datasetdir = os.path.join(self.temp_dir, str(self.id))
         collated = list(map(lambda data: (data[0], data[1], datasetdir, m_queue), datalist))
-        with Pool(16) as pool:
+        with Pool(100) as pool:
             pool.map(download_file, collated)
         while not m_queue.empty():
             queue.put(m_queue.get())
@@ -182,7 +181,8 @@ class StreamDataset(IterableDataset):
                 resp = requests.get(target, auth=(self.credential.get_tuple()))
                 resp = resp.json()
                 data_list = resp['data']
-                self._batch_download_list(data_list, queue)
+                thread = threading.Thread(target=self._batch_download_list, args=(data_list, queue))
+                thread.start()
                 target = resp['next']
             except Exception as e:
                 print(e)
