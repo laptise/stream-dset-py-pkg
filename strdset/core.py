@@ -1,3 +1,6 @@
+import threading
+from time import sleep
+from queue import Queue
 from typing import Literal
 import requests
 import json
@@ -5,6 +8,8 @@ import os
 from torch.utils.data import IterableDataset
 from .constant import API_ENDPOINT
 from multiprocessing import Process, Queue
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 def stream_file(filename, chunk_size=200):
     with open(filename, 'rb') as file:
@@ -52,6 +57,7 @@ class SDColumn:
 
 
 class StreamDataset(IterableDataset):
+
     def __init__(
         self, 
         id:int, 
@@ -70,6 +76,7 @@ class StreamDataset(IterableDataset):
         self.row_counts = row_counts
         self.temp_dir = temp_dir
         self.batch_size = batch_size
+        self._resolved_rows = []
     
     @staticmethod
     def _from_api_response(response, credential:SDCredential, temp_dir: str = os.getcwd()):
@@ -132,60 +139,47 @@ class StreamDataset(IterableDataset):
         self.batch_size = batch_size
         return self
 
-    def _load_row(self, batch_size:int | None):
-        target = f"{API_ENDPOINT}/datasets/{self.id}/rows"
-        batch = []
-        
+    def _prepare_all(self, target:str, queue: Queue):
+        print("prepare start")
+        futures = []
         while True:
             try:
                 resp = requests.get(target, auth=(self.credential.get_tuple()))
                 resp = resp.json()
-                data = resp['data']
-                row_meta = resp['meta']
+                data_list = resp['data']
                 parsed = {}
-                for value_key in data:
-                    value = data[value_key]
-                    if isinstance(value, list):
-                        dtype, *_ =  value
-                        if dtype == "file":
-                            _, presigned_url, filename = value
-                            tosave_dir = os.path.join(
-                                self.temp_dir, 
-                                str(self.id), 
-                                str(row_meta['id']),
-                                value_key
-                            )
-                            tosave_path = os.path.join(tosave_dir, filename)
-                            if os.path.exists(tosave_path):
-                                parsed[value_key] = ['file',tosave_path]
-                                continue
-                            r = requests.get(presigned_url, allow_redirects=True)
-                            os.makedirs(tosave_dir, exist_ok=True)
-                            with open(tosave_path, "wb") as f:
-                                f.write(r.content)
-                        parsed[value_key] = ['file',tosave_path]
-                    else:
-                        parsed[value_key] = value
-                if batch_size is None:
-                    yield parsed
-                else:
-                    batch.append(parsed)
-                    if len(batch) == batch_size:
-                        yield batch
-                        batch = []
+                for data, row_meta in data_list:
+                    for value_key in data:
+                        value = data[value_key]
+                        if isinstance(value, list):
+                            dtype, *_ =  value
+                            if dtype == "file":
+                                _, presigned_url, filename = value
+                                tosave_dir = os.path.join(
+                                    self.temp_dir, 
+                                    str(self.id), 
+                                    str(row_meta['id']),
+                                    value_key
+                                )
+                                tosave_path = os.path.join(tosave_dir, filename)
+                                if os.path.exists(tosave_path):
+                                    parsed[value_key] = ['file',tosave_path]
+                                    continue
+                                r = requests.get(presigned_url, allow_redirects=True)
+                                os.makedirs(tosave_dir, exist_ok=True)
+                                with open(tosave_path, "wb") as f:
+                                    f.write(r.content)
+                            parsed[value_key] = ['file',tosave_path]
+                        else:
+                            parsed[value_key] = value
+                    queue.put((parsed, futures))
                 if not resp['next']:
-                    if len(batch) > 0:
-                        yield batch
-                    return
+                    break
                 else:
                     target = resp['next']
             except Exception as e:
                 break
-
-    def _prepare_all(self):
-        generator = self._load_row(None)
-        for _ in generator:
-            pass
+        print("Downloaded all data")
         
 
     def __repr__(self) -> str:
@@ -196,9 +190,26 @@ class StreamDataset(IterableDataset):
             "\n".join([f"    - {column}" for column in self.columns]) 
     
     def __iter__(self):
-        process = Process(target=self._prepare_all)
-        process.start()
-        return self._load_row(self.batch_size)
+        queue = Queue()
+        threading.Thread(target=self._prepare_all, args=(f"{API_ENDPOINT}/datasets/{self.id}/rows", queue)).start()
+        
+        batch = []  # バッチデータを保持するリスト
+        while not queue.empty() or threading.active_count() > 1:
+            parsed, futures = queue.get()
+            for future in as_completed(futures):
+                future.result()  # 各ダウンロードが完了するのを待つ
+            
+            if self.batch_size is None:  # バッチサイズが None の場合、各アイテムを直接返す
+                yield parsed
+            else:
+                batch.append(parsed)  # バッチにデータを追加
+                if len(batch) == self.batch_size:  # バッチが指定サイズに達したら
+                    yield batch
+                    batch = []  # バッチをリセット
+        
+        if batch:  # バッチサイズが設定されていて、バッチに残っているデータがあれば、最後にそれらを返す
+            yield batch
+
     
     def __len__(self):
         return self.row_counts

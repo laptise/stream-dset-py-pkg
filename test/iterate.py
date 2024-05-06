@@ -15,13 +15,10 @@ class DatasetTest(unittest.TestCase):
         )
     
     def test_iterate(self):
-        dataset = self.client.get_dataset(1)
-        dataset.with_batch(2)
+        dataset = self.client.get_dataset(1).with_batch(6)
         generator = iter(dataset)
         iterated_count = 0
         for _ in generator:
-            sleep(5)
-            print("item", repr(_))
             print(len(_))
             iterated_count += 1
         # self.assertTrue(iterated_count == dataset.row_counts)
