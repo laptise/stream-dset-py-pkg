@@ -1,14 +1,14 @@
+import datasets
 import threading
 from queue import Queue
 from typing import Any, Literal
 import requests
 import json
 import os
-from torch.utils.data import IterableDataset
-import multiprocessing
+import torch
 from .constant import API_ENDPOINT
+import pandas as pd
 from multiprocessing import Manager
-from concurrent.futures import as_completed
 from multiprocessing import Pool
 
 
@@ -81,7 +81,7 @@ class SDColumn:
     def __repr__(self) -> str:
         return f"<SDColumn:{self.type}> {self.name}"
 
-class StreamDataset(IterableDataset):
+class StreamDataset(torch.utils.data.IterableDataset):
 
     def __init__(
         self, 
@@ -152,6 +152,25 @@ class StreamDataset(IterableDataset):
         for column in other_columns:
             data[column.name] = payload[column.name]
         return data
+
+    def get_csv(self):
+        resp = requests.get(f"{API_ENDPOINT}/datasets/{self.id}/csv", auth=(self.credential.get_tuple()))
+        csvpath = os.path.join(self._get_dataset_dir(), "dataset.csv")
+        with open(csvpath, "wb") as f:
+            f.write(resp.content)
+        return csvpath
+    
+    def get_pd_csv(self):
+        return pd.read_csv(self.get_csv())
+
+    def to_datasets(self):
+        csv_data = self.get_pd_csv()
+        return datasets.Dataset.from_pandas(csv_data)
+
+    def _get_dataset_dir(self):
+        dir = os.path.join(self.temp_dir, str(self.id))
+        os.makedirs(dir, exist_ok=True)
+        return dir
     
     def push_row(self, body:dict):
         resolved = self._resolve_payload(body, self.columns)
